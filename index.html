@@ -111,7 +111,7 @@
 
 <div class="game-wrapper">
   <canvas id="game" width="800" height="250" role="img" aria-label="Clarity Runner game — press space to play"></canvas>
-  <p class="hint" id="hint">Press SPACE or tap to jump — swipe down to duck</p>
+  <p class="hint" id="hint"></p>
 </div>
 
 <script>
@@ -809,6 +809,12 @@
     render();
     requestAnimationFrame(gameLoop);
   }
+
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const hintEl = document.getElementById('hint');
+  hintEl.textContent = isTouchDevice
+    ? 'Tap to jump \u2014 swipe down to duck'
+    : 'SPACE to jump \u2014 DOWN ARROW to duck';
 
   initClouds();
   requestAnimationFrame((ts) => {
