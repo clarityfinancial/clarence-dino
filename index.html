@@ -162,6 +162,13 @@
     HITBOX_INSET_Y: 4,
     HITBOX_SHRINK_W: 12,
     HITBOX_SHRINK_H: 8,
+    TRICK_DURATION: 20,
+    BARREL_ROLL_BONUS: 10,
+    TRICK_BONUS: 5,
+    MILESTONE_INTERVAL: 100,
+    MILESTONE_FLASH_DURATION: 16,
+    NIGHT_FADE_SPEED: 0.03,
+    MAX_PARTICLES: 40,
   });
 
   const { GROUND_Y, CLARENCE_W, CLARENCE_H } = CONFIG;
@@ -187,13 +194,105 @@
   let needsRedraw = true;
 
   // Easter eggs
-  const TRICK_DURATION = 20;
-  const BARREL_ROLL_BONUS = 10;
-  const TRICK_BONUS = 5;
   let barrelRollTimer = 0;
   let headSpinTimer = 0;
   let wingSpreadTimer = 0;
   let lastJumpTime = 0;
+
+  // Milestone flash
+  let milestoneFlashTimer = 0;
+  let lastMilestone = 0;
+
+  // Day/night transition
+  let nightAlpha = 0;
+
+  // Particle system
+  const particles = [];
+
+  function spawnDustParticles(x, y) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) return;
+    for (let i = 0; i < 6; i++) {
+      particles.push({
+        x: x + Math.random() * 20 - 10,
+        y,
+        vx: (Math.random() - 0.5) * 2,
+        vy: -(Math.random() * 2 + 1),
+        life: 1,
+        decay: 0.03 + Math.random() * 0.02,
+        size: 2 + Math.random() * 2,
+        type: 'dust',
+      });
+    }
+  }
+
+  function spawnTrickParticles(x, y) {
+    if (particles.length >= CONFIG.MAX_PARTICLES) return;
+    for (let i = 0; i < 8; i++) {
+      const angle = (Math.PI * 2 / 8) * i;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * (1.5 + Math.random()),
+        vy: Math.sin(angle) * (1.5 + Math.random()),
+        life: 1,
+        decay: 0.025 + Math.random() * 0.015,
+        size: 2 + Math.random() * 2,
+        type: 'star',
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    let writeIdx = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= p.decay * dt;
+      if (p.type === 'dust') p.vy += 0.05 * dt;
+      if (p.life > 0) {
+        particles[writeIdx++] = p;
+      }
+    }
+    particles.length = writeIdx;
+  }
+
+  function lerpChannel(a, b, t) {
+    return Math.round(a + (b - a) * t);
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      if (p.type === 'dust') {
+        const c = lerpChannel(0xaa, 0x88, nightAlpha);
+        ctx.fillStyle = `rgb(${c},${c},${c})`;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      } else {
+        const r = lerpChannel(0xd4, 0xff, nightAlpha);
+        const g = lerpChannel(0xaf, 0xcc, nightAlpha);
+        const b = lerpChannel(0x37, 0x44, nightAlpha);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.beginPath();
+        drawStar(p.x, p.y, 5, p.size, p.size * 0.5);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawStar(cx, cy, spikes, outerR, innerR) {
+    let rot = -Math.PI / 2;
+    const step = Math.PI / spikes;
+    ctx.moveTo(cx + Math.cos(rot) * outerR, cy + Math.sin(rot) * outerR);
+    for (let i = 0; i < spikes; i++) {
+      rot += step;
+      ctx.lineTo(cx + Math.cos(rot) * innerR, cy + Math.sin(rot) * innerR);
+      rot += step;
+      ctx.lineTo(cx + Math.cos(rot) * outerR, cy + Math.sin(rot) * outerR);
+    }
+    ctx.closePath();
+  }
 
   // ─── Clarence Drawing ──────────────────────────────────────────────
 
@@ -231,10 +330,10 @@
       ctx.translate(cx, midY);
 
       if (barrelRollTimer > 0) {
-        const progress = 1 - (barrelRollTimer / TRICK_DURATION);
+        const progress = 1 - (barrelRollTimer / CONFIG.TRICK_DURATION);
         ctx.rotate(progress * Math.PI * 2);
       } else if (headSpinTimer > 0) {
-        const progress = 1 - (headSpinTimer / TRICK_DURATION);
+        const progress = 1 - (headSpinTimer / CONFIG.TRICK_DURATION);
         const wobble = Math.sin(progress * Math.PI * 6) * 0.4 * (1 - progress);
         ctx.rotate(wobble);
       } else {
@@ -244,7 +343,7 @@
       ctx.translate(-cx, -midY);
 
       if (wingSpreadTimer > 0) {
-        const progress = 1 - (wingSpreadTimer / TRICK_DURATION);
+        const progress = 1 - (wingSpreadTimer / CONFIG.TRICK_DURATION);
         const spread = 1 + Math.sin(progress * Math.PI) * 0.4;
         const drawW = CLARENCE_W * spread;
         const drawX = px - (drawW - CLARENCE_W) / 2;
@@ -634,21 +733,24 @@
       } else if (PLAYER.y < GROUND_Y && barrelRollTimer === 0) {
         const now = performance.now();
         if (now - lastJumpTime < 400) {
-          barrelRollTimer = TRICK_DURATION;
-          score += BARREL_ROLL_BONUS;
+          barrelRollTimer = CONFIG.TRICK_DURATION;
+          score += CONFIG.BARREL_ROLL_BONUS;
+          spawnTrickParticles(PLAYER.x + CLARENCE_W / 2, PLAYER.y - CLARENCE_H / 2);
         }
       }
     }
     if (action === 'headSpin' && gameState === 'running') {
       if (PLAYER.y < GROUND_Y && headSpinTimer === 0) {
-        headSpinTimer = TRICK_DURATION;
-        score += TRICK_BONUS;
+        headSpinTimer = CONFIG.TRICK_DURATION;
+        score += CONFIG.TRICK_BONUS;
+        spawnTrickParticles(PLAYER.x + CLARENCE_W / 2, PLAYER.y - CLARENCE_H / 2);
       }
     }
     if (action === 'wingSpread' && gameState === 'running') {
       if (PLAYER.y < GROUND_Y && wingSpreadTimer === 0) {
-        wingSpreadTimer = TRICK_DURATION;
-        score += TRICK_BONUS;
+        wingSpreadTimer = CONFIG.TRICK_DURATION;
+        score += CONFIG.TRICK_BONUS;
+        spawnTrickParticles(PLAYER.x + CLARENCE_W / 2, PLAYER.y - CLARENCE_H / 2);
       }
     }
     if (action === 'duck' && gameState === 'running') {
@@ -770,6 +872,10 @@
     headSpinTimer = 0;
     wingSpreadTimer = 0;
     lastJumpTime = 0;
+    milestoneFlashTimer = 0;
+    lastMilestone = 0;
+    nightAlpha = 0;
+    particles.length = 0;
     needsRedraw = true;
   }
 
@@ -779,10 +885,14 @@
     frameCount++;
     needsRedraw = true;
 
+    const wasAirborne = PLAYER.y < GROUND_Y;
     PLAYER.vy += CONFIG.GRAVITY * dt;
     PLAYER.y += PLAYER.vy * dt;
     if (PLAYER.y >= GROUND_Y) {
       PLAYER.y = GROUND_Y;
+      if (wasAirborne && PLAYER.vy > 0) {
+        spawnDustParticles(PLAYER.x + CLARENCE_W / 2, GROUND_Y);
+      }
       PLAYER.vy = 0;
       if ((keys['ArrowDown'] || touchDucking) && !PLAYER.ducking) {
         PLAYER.ducking = true;
@@ -796,6 +906,19 @@
     speed = Math.min(CONFIG.MAX_SPEED, CONFIG.INITIAL_SPEED + score * CONFIG.ACCELERATION);
     score += speed * CONFIG.SCORE_RATE * dt;
     nightMode = Math.floor(score / CONFIG.NIGHT_CYCLE) % 2 === 1;
+
+    const targetAlpha = nightMode ? 1 : 0;
+    if (nightAlpha < targetAlpha) nightAlpha = Math.min(targetAlpha, nightAlpha + CONFIG.NIGHT_FADE_SPEED * dt);
+    else if (nightAlpha > targetAlpha) nightAlpha = Math.max(targetAlpha, nightAlpha - CONFIG.NIGHT_FADE_SPEED * dt);
+
+    const currentMilestone = Math.floor(score / CONFIG.MILESTONE_INTERVAL);
+    if (currentMilestone > lastMilestone) {
+      lastMilestone = currentMilestone;
+      milestoneFlashTimer = CONFIG.MILESTONE_FLASH_DURATION;
+    }
+    else if (milestoneFlashTimer > 0) milestoneFlashTimer = Math.max(0, milestoneFlashTimer - dt);
+
+    updateParticles(dt);
 
     groundOffset = (groundOffset + speed * dt) % W;
 
@@ -848,8 +971,14 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    document.body.classList.toggle('night', nightMode);
-    ctx.fillStyle = nightMode ? '#1a1a2e' : '#f7f7f7';
+    document.body.classList.toggle('night', nightAlpha > 0.5);
+
+    const dayColor = [247, 247, 247];
+    const nightColor = [26, 26, 46];
+    const r = Math.round(dayColor[0] + (nightColor[0] - dayColor[0]) * nightAlpha);
+    const g = Math.round(dayColor[1] + (nightColor[1] - dayColor[1]) * nightAlpha);
+    const b = Math.round(dayColor[2] + (nightColor[2] - dayColor[2]) * nightAlpha);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.fillRect(0, 0, W, H);
 
     // clouds
@@ -867,6 +996,16 @@
 
     // player
     drawPlayer();
+
+    // particles
+    drawParticles();
+
+    // milestone flash
+    if (milestoneFlashTimer > 0) {
+      const flashAlpha = milestoneFlashTimer / CONFIG.MILESTONE_FLASH_DURATION;
+      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.3})`;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // score
     drawScore();
