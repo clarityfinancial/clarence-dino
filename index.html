@@ -20,9 +20,7 @@
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: none;
     -webkit-touch-callout: none;
-    overscroll-behavior: none;
   }
 
   .game-wrapper {
@@ -60,6 +58,11 @@
     .four-oh-four p { font-size: 14px; }
     .four-oh-four { margin-bottom: 12px; }
     .hint { font-size: 12px; }
+  }
+
+  body.playing {
+    touch-action: none;
+    overscroll-behavior: none;
   }
 
   body.night {
@@ -586,11 +589,13 @@
       if (gameState === 'idle') {
         gameState = 'running';
         needsRedraw = true;
+        document.body.classList.add('playing');
         document.getElementById('hint').classList.add('hidden');
       }
       if (gameState === 'dead') {
         resetGame();
         gameState = 'running';
+        document.body.classList.add('playing');
         return;
       }
       if (PLAYER.y >= GROUND_Y && !PLAYER.ducking) {
@@ -659,14 +664,16 @@
 
   document.addEventListener('touchend', (e) => {
     if (gameState === 'running') e.preventDefault();
+    if (touchDucking) {
+      touchDucking = false;
+      handleActionEnd('duckEnd');
+    }
     if (!touchActive) return;
     touchActive = false;
     const elapsed = performance.now() - touchStartTime;
     if (elapsed < 300) {
       handleAction('jump');
     }
-    touchDucking = false;
-    handleActionEnd('duckEnd');
   }, { passive: false });
 
   canvas.addEventListener('mousedown', (e) => {
@@ -745,6 +752,7 @@
 
     if (checkCollision()) {
       gameState = 'dead';
+      document.body.classList.remove('playing');
       if (Math.floor(score) > highScore) {
         highScore = Math.floor(score);
         safeSetItem('clarity-runner-hi', String(highScore));
