@@ -186,10 +186,13 @@
   let nightMode = false;
   let needsRedraw = true;
 
-  // Easter egg: barrel roll
-  const BARREL_ROLL_DURATION = 20;
+  // Easter eggs
+  const TRICK_DURATION = 20;
   const BARREL_ROLL_BONUS = 10;
+  const TRICK_BONUS = 5;
   let barrelRollTimer = 0;
+  let headSpinTimer = 0;
+  let wingSpreadTimer = 0;
   let lastJumpTime = 0;
 
   // ─── Clarence Drawing ──────────────────────────────────────────────
@@ -224,15 +227,32 @@
     }
 
     if (PLAYER.y < GROUND_Y) {
-      ctx.translate(cx, cy - CLARENCE_H / 2);
+      const midY = cy - CLARENCE_H / 2;
+      ctx.translate(cx, midY);
+
       if (barrelRollTimer > 0) {
-        const progress = 1 - (barrelRollTimer / BARREL_ROLL_DURATION);
+        const progress = 1 - (barrelRollTimer / TRICK_DURATION);
         ctx.rotate(progress * Math.PI * 2);
+      } else if (headSpinTimer > 0) {
+        const progress = 1 - (headSpinTimer / TRICK_DURATION);
+        const wobble = Math.sin(progress * Math.PI * 6) * 0.4 * (1 - progress);
+        ctx.rotate(wobble);
       } else {
         ctx.rotate(-0.15);
       }
-      ctx.translate(-cx, -(cy - CLARENCE_H / 2));
-      ctx.drawImage(sprite, px, cy - CLARENCE_H, CLARENCE_W, CLARENCE_H);
+
+      ctx.translate(-cx, -midY);
+
+      if (wingSpreadTimer > 0) {
+        const progress = 1 - (wingSpreadTimer / TRICK_DURATION);
+        const spread = 1 + Math.sin(progress * Math.PI) * 0.4;
+        const drawW = CLARENCE_W * spread;
+        const drawX = px - (drawW - CLARENCE_W) / 2;
+        ctx.drawImage(sprite, drawX, cy - CLARENCE_H, drawW, CLARENCE_H);
+      } else {
+        ctx.drawImage(sprite, px, cy - CLARENCE_H, CLARENCE_W, CLARENCE_H);
+      }
+
       ctx.restore();
       return;
     }
@@ -614,9 +634,21 @@
       } else if (PLAYER.y < GROUND_Y && barrelRollTimer === 0) {
         const now = performance.now();
         if (now - lastJumpTime < 400) {
-          barrelRollTimer = BARREL_ROLL_DURATION;
+          barrelRollTimer = TRICK_DURATION;
           score += BARREL_ROLL_BONUS;
         }
+      }
+    }
+    if (action === 'headSpin' && gameState === 'running') {
+      if (PLAYER.y < GROUND_Y && headSpinTimer === 0) {
+        headSpinTimer = TRICK_DURATION;
+        score += TRICK_BONUS;
+      }
+    }
+    if (action === 'wingSpread' && gameState === 'running') {
+      if (PLAYER.y < GROUND_Y && wingSpreadTimer === 0) {
+        wingSpreadTimer = TRICK_DURATION;
+        score += TRICK_BONUS;
       }
     }
     if (action === 'duck' && gameState === 'running') {
@@ -643,6 +675,16 @@
     if (e.code === 'ArrowDown') {
       e.preventDefault();
       if (!keys[e.code]) handleAction('duck');
+      keys[e.code] = true;
+    }
+    if (e.code === 'ArrowLeft') {
+      e.preventDefault();
+      if (!keys[e.code]) handleAction('headSpin');
+      keys[e.code] = true;
+    }
+    if (e.code === 'ArrowRight') {
+      e.preventDefault();
+      if (!keys[e.code]) handleAction('wingSpread');
       keys[e.code] = true;
     }
   });
@@ -713,6 +755,8 @@
     nightMode = false;
     frameCount = 0;
     barrelRollTimer = 0;
+    headSpinTimer = 0;
+    wingSpreadTimer = 0;
     lastJumpTime = 0;
     needsRedraw = true;
   }
@@ -734,6 +778,8 @@
     }
 
     if (barrelRollTimer > 0) barrelRollTimer = Math.max(0, barrelRollTimer - dt);
+    if (headSpinTimer > 0) headSpinTimer = Math.max(0, headSpinTimer - dt);
+    if (wingSpreadTimer > 0) wingSpreadTimer = Math.max(0, wingSpreadTimer - dt);
 
     speed = Math.min(CONFIG.MAX_SPEED, CONFIG.INITIAL_SPEED + score * CONFIG.ACCELERATION);
     score += speed * CONFIG.SCORE_RATE * dt;
