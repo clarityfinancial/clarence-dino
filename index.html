@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="description" content="Page not found — play a game instead!">
 <title>Clarity Runner</title>
 <style>
@@ -15,10 +15,14 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
+    min-height: 100dvh;
     font-family: 'Courier New', monospace;
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
   }
 
   .game-wrapper {
@@ -32,6 +36,7 @@
     width: 100%;
     height: auto;
     image-rendering: auto;
+    touch-action: none;
   }
 
   .hint {
@@ -43,6 +48,19 @@
   }
 
   .hint.hidden { opacity: 0; }
+
+  @media (max-height: 500px) and (orientation: landscape) {
+    .four-oh-four { display: none; }
+    body { justify-content: flex-start; padding-top: 8px; }
+    .hint { margin-top: 4px; font-size: 12px; }
+  }
+
+  @media (max-width: 500px) {
+    .four-oh-four h1 { font-size: 32px; }
+    .four-oh-four p { font-size: 14px; }
+    .four-oh-four { margin-bottom: 12px; }
+    .hint { font-size: 12px; }
+  }
 
   body.night {
     background: #1a1a2e;
@@ -91,7 +109,7 @@
 
 <div class="game-wrapper">
   <canvas id="game" width="800" height="250" role="img" aria-label="Clarity Runner game — press space to play"></canvas>
-  <p class="hint" id="hint">Press SPACE or tap to start</p>
+  <p class="hint" id="hint">Press SPACE or tap to jump — swipe down to duck</p>
 </div>
 
 <script>
@@ -614,15 +632,51 @@
     }
   });
 
+  let touchStartY = 0;
+  let touchStartTime = 0;
+  let touchActive = false;
+  let touchDucking = false;
+
   canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    handleAction('jump');
-  });
+    const touch = e.touches[0];
+    touchStartY = touch.clientY;
+    touchStartTime = performance.now();
+    touchActive = true;
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!touchActive) return;
+    const touch = e.touches[0];
+    const dy = touch.clientY - touchStartY;
+    if (dy > 30) {
+      handleAction('duck');
+      touchDucking = true;
+      touchActive = false;
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (!touchActive) return;
+    touchActive = false;
+    const elapsed = performance.now() - touchStartTime;
+    if (elapsed < 300) {
+      handleAction('jump');
+    }
+    touchDucking = false;
+    handleActionEnd('duckEnd');
+  }, { passive: false });
 
   canvas.addEventListener('mousedown', (e) => {
     e.preventDefault();
     handleAction('jump');
   });
+
+  document.addEventListener('touchmove', (e) => {
+    if (e.target === canvas) e.preventDefault();
+  }, { passive: false });
 
   // ─── Game Logic ───────────────────────────────────────────────────
 
@@ -652,7 +706,7 @@
     if (PLAYER.y >= GROUND_Y) {
       PLAYER.y = GROUND_Y;
       PLAYER.vy = 0;
-      if (keys['ArrowDown'] && !PLAYER.ducking) {
+      if ((keys['ArrowDown'] || touchDucking) && !PLAYER.ducking) {
         PLAYER.ducking = true;
       }
     }
