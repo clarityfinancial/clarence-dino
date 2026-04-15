@@ -696,28 +696,40 @@
     }
   });
 
+  let touchStartX = 0;
   let touchStartY = 0;
   let touchStartTime = 0;
   let touchActive = false;
   let touchDucking = false;
+  let touchTrickDone = false;
 
   document.addEventListener('touchstart', (e) => {
     if (gameState === 'running') e.preventDefault();
     const touch = e.touches[0];
+    touchStartX = touch.clientX;
     touchStartY = touch.clientY;
     touchStartTime = performance.now();
     touchActive = true;
+    touchTrickDone = false;
   }, { passive: false });
 
   document.addEventListener('touchmove', (e) => {
     if (gameState === 'running') e.preventDefault();
-    if (!touchActive) return;
+    if (!touchActive || touchTrickDone) return;
     const touch = e.touches[0];
+    const dx = touch.clientX - touchStartX;
     const dy = touch.clientY - touchStartY;
     if (dy > 30) {
       handleAction('duck');
       touchDucking = true;
+      touchTrickDone = true;
       touchActive = false;
+    } else if (dx < -40) {
+      handleAction('headSpin');
+      touchTrickDone = true;
+    } else if (dx > 40) {
+      handleAction('wingSpread');
+      touchTrickDone = true;
     }
   }, { passive: false });
 
