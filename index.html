@@ -638,7 +638,7 @@
   let touchDucking = false;
 
   document.addEventListener('touchstart', (e) => {
-    e.preventDefault();
+    if (gameState === 'running') e.preventDefault();
     const touch = e.touches[0];
     touchStartY = touch.clientY;
     touchStartTime = performance.now();
@@ -646,7 +646,7 @@
   }, { passive: false });
 
   document.addEventListener('touchmove', (e) => {
-    e.preventDefault();
+    if (gameState === 'running') e.preventDefault();
     if (!touchActive) return;
     const touch = e.touches[0];
     const dy = touch.clientY - touchStartY;
@@ -658,7 +658,7 @@
   }, { passive: false });
 
   document.addEventListener('touchend', (e) => {
-    e.preventDefault();
+    if (gameState === 'running') e.preventDefault();
     if (!touchActive) return;
     touchActive = false;
     const elapsed = performance.now() - touchStartTime;
