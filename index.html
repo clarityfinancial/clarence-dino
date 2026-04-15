@@ -206,6 +206,59 @@
   // Day/night transition
   let nightAlpha = 0;
 
+  // Eggs (laid when ducking)
+  const eggs = [];
+  let lastEggTime = 0;
+
+  function spawnEgg() {
+    const now = performance.now();
+    if (now - lastEggTime < 300) return;
+    if (eggs.length >= 50) return;
+    lastEggTime = now;
+    eggs.push({
+      x: PLAYER.x + (PLAYER.ducking ? CONFIG.DUCK_W : CLARENCE_W) / 2,
+      y: GROUND_Y,
+      age: 0,
+    });
+  }
+
+  function updateEggs(dt) {
+    let writeIdx = 0;
+    for (let i = 0; i < eggs.length; i++) {
+      eggs[i].x -= speed * dt;
+      eggs[i].age += dt;
+      if (eggs[i].x > -20) {
+        eggs[writeIdx++] = eggs[i];
+      }
+    }
+    eggs.length = writeIdx;
+  }
+
+  function drawEggs() {
+    for (const egg of eggs) {
+      const bounce = egg.age < 8 ? Math.abs(Math.sin(egg.age * 0.8)) * 6 * (1 - egg.age / 8) : 0;
+      const ey = egg.y - 8 - bounce;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.1)';
+      ctx.beginPath();
+      ctx.ellipse(egg.x, egg.y - 1, 5, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = nightAlpha > 0.5 ? '#e0d4b8' : '#f5e6d0';
+      ctx.beginPath();
+      ctx.ellipse(egg.x, ey, 6, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = nightAlpha > 0.5 ? '#b8a888' : '#d4b896';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = nightAlpha > 0.5 ? '#c8b898' : '#e8d4b8';
+      ctx.beginPath();
+      ctx.ellipse(egg.x - 1, ey - 2, 2, 3, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // Particle system
   const particles = [];
 
@@ -755,6 +808,7 @@
     }
     if (action === 'duck' && gameState === 'running') {
       if (PLAYER.y >= GROUND_Y - 2) {
+        if (!PLAYER.ducking) spawnEgg();
         PLAYER.ducking = true;
       } else {
         PLAYER.vy += 1;
@@ -876,6 +930,8 @@
     lastMilestone = 0;
     nightAlpha = 0;
     particles.length = 0;
+    eggs.length = 0;
+    lastEggTime = 0;
     needsRedraw = true;
   }
 
@@ -895,6 +951,7 @@
       }
       PLAYER.vy = 0;
       if ((keys['ArrowDown'] || touchDucking) && !PLAYER.ducking) {
+        spawnEgg();
         PLAYER.ducking = true;
       }
     }
@@ -919,6 +976,7 @@
     else if (milestoneFlashTimer > 0) milestoneFlashTimer = Math.max(0, milestoneFlashTimer - dt);
 
     updateParticles(dt);
+    updateEggs(dt);
 
     groundOffset = (groundOffset + speed * dt) % W;
 
@@ -988,6 +1046,9 @@
 
     // ground
     drawGround();
+
+    // eggs (ground objects, behind obstacles)
+    drawEggs();
 
     // obstacles
     for (const obs of obstacles) {
