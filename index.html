@@ -637,7 +637,7 @@
   let touchActive = false;
   let touchDucking = false;
 
-  canvas.addEventListener('touchstart', (e) => {
+  document.addEventListener('touchstart', (e) => {
     e.preventDefault();
     const touch = e.touches[0];
     touchStartY = touch.clientY;
@@ -645,7 +645,7 @@
     touchActive = true;
   }, { passive: false });
 
-  canvas.addEventListener('touchmove', (e) => {
+  document.addEventListener('touchmove', (e) => {
     e.preventDefault();
     if (!touchActive) return;
     const touch = e.touches[0];
@@ -657,7 +657,7 @@
     }
   }, { passive: false });
 
-  canvas.addEventListener('touchend', (e) => {
+  document.addEventListener('touchend', (e) => {
     e.preventDefault();
     if (!touchActive) return;
     touchActive = false;
@@ -673,10 +673,6 @@
     e.preventDefault();
     handleAction('jump');
   });
-
-  document.addEventListener('touchmove', (e) => {
-    if (e.target === canvas) e.preventDefault();
-  }, { passive: false });
 
   // ─── Game Logic ───────────────────────────────────────────────────
 
