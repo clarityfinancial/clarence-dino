@@ -827,22 +827,29 @@
 
   // ─── Score Display ────────────────────────────────────────────────
 
+  function scoreTextColor() {
+    const sky = skyColorAt(nightAlpha, true);
+    return `rgb(${255 - sky[0]},${255 - sky[1]},${255 - sky[2]})`;
+  }
+
   function drawScore() {
     ctx.font = '16px "Courier New", monospace';
     ctx.textAlign = 'right';
-    const shadowColor = nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)';
-    ctx.shadowColor = shadowColor;
-    ctx.shadowBlur = 4;
+    const txtColor = scoreTextColor();
+    ctx.shadowColor = nightAlpha > 0.5 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+    ctx.shadowBlur = 3;
 
     const scoreStr = String(Math.floor(score)).padStart(5, '0');
     const hiStr = 'HI ' + String(highScore).padStart(5, '0');
 
     if (highScore > 0) {
-      ctx.fillStyle = nightMode ? '#666' : '#aaa';
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = txtColor;
       ctx.fillText(hiStr, W - 100, 24);
+      ctx.globalAlpha = 1;
     }
 
-    ctx.fillStyle = nightMode ? '#ddd' : '#535353';
+    ctx.fillStyle = txtColor;
     ctx.fillText(scoreStr, W - 16, 24);
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -851,19 +858,18 @@
   // ─── Game Over ────────────────────────────────────────────────────
 
   function drawGameOver() {
-    const shadowColor = nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)';
-    ctx.shadowColor = shadowColor;
+    const txtColor = scoreTextColor();
+    ctx.shadowColor = nightAlpha > 0.5 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
     ctx.shadowBlur = 4;
-    ctx.fillStyle = nightMode ? '#ddd' : '#535353';
+    ctx.fillStyle = txtColor;
     ctx.font = '20px "Courier New", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('G A M E   O V E R', W / 2, H / 2 - 30);
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
 
-    // restart icon (simple arrow)
     const cx = W / 2, cy = H / 2;
-    ctx.strokeStyle = nightMode ? '#ddd' : '#535353';
+    ctx.strokeStyle = txtColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, 14, 0, Math.PI * 1.6);
@@ -1180,10 +1186,9 @@
       lastRenderedAlpha = roundedAlpha;
       const pageBg = `rgb(${pageColor[0]},${pageColor[1]},${pageColor[2]})`;
       document.body.style.backgroundColor = pageBg;
-      const textColor = lerpRGB([83, 83, 83], [221, 221, 221], nightAlpha);
-      const subTextColor = lerpRGB([153, 153, 153], [119, 119, 119], nightAlpha);
-      const textRgb = `rgb(${textColor[0]},${textColor[1]},${textColor[2]})`;
-      const subRgb = `rgb(${subTextColor[0]},${subTextColor[1]},${subTextColor[2]})`;
+      const invR = 255 - pageColor[0], invG = 255 - pageColor[1], invB = 255 - pageColor[2];
+      const textRgb = `rgb(${invR},${invG},${invB})`;
+      const subRgb = `rgba(${invR},${invG},${invB},0.6)`;
       if (headerH1) headerH1.style.color = textRgb;
       if (headerP) headerP.style.color = subRgb;
       if (hintEl) hintEl.style.color = subRgb;
