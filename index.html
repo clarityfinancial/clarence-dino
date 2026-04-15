@@ -64,22 +64,6 @@
     overscroll-behavior: none;
   }
 
-  body.night {
-    background: #1a1a2e;
-  }
-
-  body.night .four-oh-four h1 {
-    color: #ddd;
-  }
-
-  body.night .four-oh-four p {
-    color: #777;
-  }
-
-  body.night .hint {
-    color: #666;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .hint { transition: none; }
   }
@@ -154,7 +138,7 @@
     DUCK_W: 72,
     DUCK_H: 50,
     PLAYER_X: 60,
-    NIGHT_CYCLE: 700,
+    NIGHT_CYCLE: 1200,
     SCORE_RATE: 0.02,
     FLYING_MIN_SCORE: 150,
     FLYING_CHANCE: 0.2,
@@ -167,7 +151,6 @@
     TRICK_BONUS: 5,
     MILESTONE_INTERVAL: 100,
     MILESTONE_FLASH_DURATION: 16,
-    NIGHT_FADE_SPEED: 0.03,
     MAX_PARTICLES: 40,
     DOUBLE_JUMP_FORCE: -9,
     BARREL_ROLL_TAP_WINDOW: 200,
@@ -195,6 +178,7 @@
   let frameCount = 0;
   let nightMode = false;
   let needsRedraw = true;
+  let lastRenderedAlpha = -1;
 
   // Easter eggs
   let barrelRollTimer = 0;
@@ -314,7 +298,7 @@
   }
 
   function lerpChannel(a, b, t) {
-    return Math.round(a + (b - a) * t);
+    return Math.round(Math.max(0, Math.min(255, a + (b - a) * t)));
   }
 
   function drawParticles() {
@@ -659,6 +643,146 @@
     }
   }
 
+  // ─── Sky System ─────────────────────────────────────────────────
+
+  const STAR_POSITIONS = [];
+  for (let i = 0; i < 20; i++) {
+    STAR_POSITIONS.push({
+      x: (i * 137.5 + 42) % W,
+      y: 8 + ((i * 97.3 + 13) % (GROUND_Y * 0.5)),
+      size: 1 + (i % 3) * 0.5,
+      twinkleOffset: i * 1.7,
+    });
+  }
+
+  function lerpRGB(a, b, t) {
+    return [
+      Math.round(Math.max(0, Math.min(255, a[0] + (b[0] - a[0]) * t))),
+      Math.round(Math.max(0, Math.min(255, a[1] + (b[1] - a[1]) * t))),
+      Math.round(Math.max(0, Math.min(255, a[2] + (b[2] - a[2]) * t))),
+    ];
+  }
+
+  const SKY = {
+    dayTop: [135, 206, 235], dayBot: [220, 235, 247],
+    sunsetTop: [255, 140, 66], sunsetBot: [255, 215, 0],
+    twilightTop: [45, 27, 105], twilightBot: [255, 99, 71],
+    nightTop: [10, 10, 30], nightBot: [26, 26, 46],
+  };
+
+  function skyColorAt(t, isTop) {
+    const top = isTop;
+    if (t <= 0.35) {
+      const p = t / 0.35;
+      return lerpRGB(top ? SKY.dayTop : SKY.dayBot, top ? SKY.sunsetTop : SKY.sunsetBot, p);
+    } else if (t <= 0.7) {
+      const p = (t - 0.35) / 0.35;
+      return lerpRGB(top ? SKY.sunsetTop : SKY.sunsetBot, top ? SKY.twilightTop : SKY.twilightBot, p);
+    } else {
+      const p = (t - 0.7) / 0.3;
+      return lerpRGB(top ? SKY.twilightTop : SKY.twilightBot, top ? SKY.nightTop : SKY.nightBot, p);
+    }
+  }
+
+  function drawSky() {
+    const topColor = skyColorAt(nightAlpha, true);
+    const botColor = skyColorAt(nightAlpha, false);
+    const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    grad.addColorStop(0, `rgb(${topColor[0]},${topColor[1]},${topColor[2]})`);
+    grad.addColorStop(1, `rgb(${botColor[0]},${botColor[1]},${botColor[2]})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, GROUND_Y);
+    ctx.clip();
+    drawSun();
+    drawMoon();
+    drawStars();
+    ctx.restore();
+
+    const groundColor = lerpRGB([247, 247, 247], [26, 26, 46], nightAlpha);
+    ctx.fillStyle = `rgb(${groundColor[0]},${groundColor[1]},${groundColor[2]})`;
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  }
+
+  function drawSun() {
+    if (nightAlpha > 0.8) return;
+    const sunX = W - 80;
+    const sunRestY = 45;
+    const sunSetY = GROUND_Y + 15;
+    const sunY = sunRestY + (sunSetY - sunRestY) * Math.min(nightAlpha / 0.8, 1);
+    const sunAlpha = nightAlpha < 0.6 ? 1 : Math.max(0, 1 - (nightAlpha - 0.6) / 0.2);
+    const sunRadius = 14;
+
+    ctx.save();
+    ctx.globalAlpha = sunAlpha;
+
+    const glowR = lerpChannel(0xff, 0xff, nightAlpha);
+    const glowG = lerpChannel(0xd7, 0x63, nightAlpha);
+    const glowB = lerpChannel(0x00, 0x47, nightAlpha);
+
+    const glow = ctx.createRadialGradient(sunX, sunY, sunRadius * 0.5, sunX, sunY, sunRadius * 3);
+    glow.addColorStop(0, `rgba(${glowR},${glowG},${glowB},0.3)`);
+    glow.addColorStop(1, 'rgba(255,200,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(sunX - sunRadius * 3, sunY - sunRadius * 3, sunRadius * 6, sunRadius * 6);
+
+    const bodyR = lerpChannel(0xff, 0xff, nightAlpha * 1.5);
+    const bodyG = lerpChannel(0xe0, 0x8c, nightAlpha * 1.5);
+    const bodyB = lerpChannel(0x42, 0x00, nightAlpha * 1.5);
+    ctx.fillStyle = `rgb(${bodyR},${bodyG},${bodyB})`;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawMoon() {
+    if (nightAlpha < 0.85) return;
+    const moonAlpha = Math.min(1, (nightAlpha - 0.85) / 0.15);
+    const moonX = 100;
+    const moonY = 35 + (1 - nightAlpha) * 20;
+    const moonRadius = 10;
+
+    ctx.save();
+    ctx.globalAlpha = moonAlpha;
+
+    const moonGlow = ctx.createRadialGradient(moonX, moonY, moonRadius * 0.5, moonX, moonY, moonRadius * 2.5);
+    moonGlow.addColorStop(0, 'rgba(200,210,255,0.15)');
+    moonGlow.addColorStop(1, 'rgba(200,210,255,0)');
+    ctx.fillStyle = moonGlow;
+    ctx.fillRect(moonX - moonRadius * 3, moonY - moonRadius * 3, moonRadius * 6, moonRadius * 6);
+
+    ctx.fillStyle = '#e8e8f0';
+    ctx.beginPath();
+    ctx.arc(moonX, moonY, moonRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,240,0.3)';
+    ctx.beginPath();
+    ctx.arc(moonX - 2, moonY - 2, moonRadius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawStars() {
+    if (nightAlpha < 0.5) return;
+    const starAlpha = Math.min(1, (nightAlpha - 0.5) / 0.3);
+
+    ctx.save();
+    for (const star of STAR_POSITIONS) {
+      const twinkle = 0.5 + 0.5 * Math.sin(frameCount * 0.05 + star.twinkleOffset);
+      ctx.globalAlpha = starAlpha * twinkle;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(star.x, star.y, star.size, star.size);
+    }
+    ctx.restore();
+  }
+
   // ─── Clouds ───────────────────────────────────────────────────────
 
   function drawCloud(x, y) {
@@ -704,9 +828,11 @@
   // ─── Score Display ────────────────────────────────────────────────
 
   function drawScore() {
-    ctx.fillStyle = nightMode ? '#ddd' : '#535353';
     ctx.font = '16px "Courier New", monospace';
     ctx.textAlign = 'right';
+    const shadowColor = nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)';
+    ctx.shadowColor = shadowColor;
+    ctx.shadowBlur = 4;
 
     const scoreStr = String(Math.floor(score)).padStart(5, '0');
     const hiStr = 'HI ' + String(highScore).padStart(5, '0');
@@ -718,15 +844,22 @@
 
     ctx.fillStyle = nightMode ? '#ddd' : '#535353';
     ctx.fillText(scoreStr, W - 16, 24);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   }
 
   // ─── Game Over ────────────────────────────────────────────────────
 
   function drawGameOver() {
+    const shadowColor = nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)';
+    ctx.shadowColor = shadowColor;
+    ctx.shadowBlur = 4;
     ctx.fillStyle = nightMode ? '#ddd' : '#535353';
     ctx.font = '20px "Courier New", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('G A M E   O V E R', W / 2, H / 2 - 30);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     // restart icon (simple arrow)
     const cx = W / 2, cy = H / 2;
@@ -974,11 +1107,11 @@
 
     speed = Math.min(CONFIG.MAX_SPEED, CONFIG.INITIAL_SPEED + score * CONFIG.ACCELERATION);
     score += speed * CONFIG.SCORE_RATE * dt;
-    nightMode = Math.floor(score / CONFIG.NIGHT_CYCLE) % 2 === 1;
-
-    const targetAlpha = nightMode ? 1 : 0;
-    if (nightAlpha < targetAlpha) nightAlpha = Math.min(targetAlpha, nightAlpha + CONFIG.NIGHT_FADE_SPEED * dt);
-    else if (nightAlpha > targetAlpha) nightAlpha = Math.max(targetAlpha, nightAlpha - CONFIG.NIGHT_FADE_SPEED * dt);
+    const cycleProgress = (score % CONFIG.NIGHT_CYCLE) / CONFIG.NIGHT_CYCLE;
+    const cycleIndex = Math.floor(score / CONFIG.NIGHT_CYCLE);
+    const goingDark = cycleIndex % 2 === 0;
+    nightAlpha = goingDark ? cycleProgress : 1 - cycleProgress;
+    nightMode = nightAlpha > 0.5;
 
     const currentMilestone = Math.floor(score / CONFIG.MILESTONE_INTERVAL);
     if (currentMilestone > lastMilestone) {
@@ -1041,15 +1174,21 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    document.body.classList.toggle('night', nightAlpha > 0.5);
-
-    const dayColor = [247, 247, 247];
-    const nightColor = [26, 26, 46];
-    const r = Math.round(dayColor[0] + (nightColor[0] - dayColor[0]) * nightAlpha);
-    const g = Math.round(dayColor[1] + (nightColor[1] - dayColor[1]) * nightAlpha);
-    const b = Math.round(dayColor[2] + (nightColor[2] - dayColor[2]) * nightAlpha);
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.fillRect(0, 0, W, H);
+    const pageColor = lerpRGB([247, 247, 247], [26, 26, 46], nightAlpha);
+    const roundedAlpha = Math.round(nightAlpha * 100) / 100;
+    if (roundedAlpha !== lastRenderedAlpha) {
+      lastRenderedAlpha = roundedAlpha;
+      const pageBg = `rgb(${pageColor[0]},${pageColor[1]},${pageColor[2]})`;
+      document.body.style.backgroundColor = pageBg;
+      const textColor = lerpRGB([83, 83, 83], [221, 221, 221], nightAlpha);
+      const subTextColor = lerpRGB([153, 153, 153], [119, 119, 119], nightAlpha);
+      const textRgb = `rgb(${textColor[0]},${textColor[1]},${textColor[2]})`;
+      const subRgb = `rgb(${subTextColor[0]},${subTextColor[1]},${subTextColor[2]})`;
+      if (headerH1) headerH1.style.color = textRgb;
+      if (headerP) headerP.style.color = subRgb;
+      if (hintEl) hintEl.style.color = subRgb;
+    }
+    drawSky();
 
     // clouds
     for (const cloud of clouds) {
@@ -1104,6 +1243,8 @@
 
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const hintEl = document.getElementById('hint');
+  const headerH1 = document.querySelector('.four-oh-four h1');
+  const headerP = document.querySelector('.four-oh-four p');
   hintEl.textContent = isTouchDevice
     ? 'Tap to jump \u2014 swipe down to duck'
     : 'SPACE to jump \u2014 DOWN ARROW to duck';
