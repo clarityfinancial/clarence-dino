@@ -186,6 +186,12 @@
   let nightMode = false;
   let needsRedraw = true;
 
+  // Easter egg: barrel roll
+  const BARREL_ROLL_DURATION = 20;
+  const BARREL_ROLL_BONUS = 10;
+  let barrelRollTimer = 0;
+  let lastJumpTime = 0;
+
   // ─── Clarence Drawing ──────────────────────────────────────────────
 
   function drawPlayer() {
@@ -218,9 +224,14 @@
     }
 
     if (PLAYER.y < GROUND_Y) {
-      ctx.translate(cx, cy);
-      ctx.rotate(-0.15);
-      ctx.translate(-cx, -cy);
+      ctx.translate(cx, cy - CLARENCE_H / 2);
+      if (barrelRollTimer > 0) {
+        const progress = 1 - (barrelRollTimer / BARREL_ROLL_DURATION);
+        ctx.rotate(progress * Math.PI * 2);
+      } else {
+        ctx.rotate(-0.15);
+      }
+      ctx.translate(-cx, -(cy - CLARENCE_H / 2));
       ctx.drawImage(sprite, px, cy - CLARENCE_H, CLARENCE_W, CLARENCE_H);
       ctx.restore();
       return;
@@ -599,6 +610,13 @@
       }
       if (PLAYER.y >= GROUND_Y && !PLAYER.ducking) {
         PLAYER.vy = CONFIG.JUMP_FORCE;
+        lastJumpTime = performance.now();
+      } else if (PLAYER.y < GROUND_Y && barrelRollTimer === 0) {
+        const now = performance.now();
+        if (now - lastJumpTime < 400) {
+          barrelRollTimer = BARREL_ROLL_DURATION;
+          score += BARREL_ROLL_BONUS;
+        }
       }
     }
     if (action === 'duck' && gameState === 'running') {
@@ -694,6 +712,8 @@
     nextObstacleIn = 100;
     nightMode = false;
     frameCount = 0;
+    barrelRollTimer = 0;
+    lastJumpTime = 0;
     needsRedraw = true;
   }
 
@@ -712,6 +732,8 @@
         PLAYER.ducking = true;
       }
     }
+
+    if (barrelRollTimer > 0) barrelRollTimer = Math.max(0, barrelRollTimer - dt);
 
     speed = Math.min(CONFIG.MAX_SPEED, CONFIG.INITIAL_SPEED + score * CONFIG.ACCELERATION);
     score += speed * CONFIG.SCORE_RATE * dt;
