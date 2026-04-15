@@ -169,6 +169,8 @@
     MILESTONE_FLASH_DURATION: 16,
     NIGHT_FADE_SPEED: 0.03,
     MAX_PARTICLES: 40,
+    DOUBLE_JUMP_FORCE: -9,
+    BARREL_ROLL_TAP_WINDOW: 200,
   });
 
   const { GROUND_Y, CLARENCE_W, CLARENCE_H } = CONFIG;
@@ -180,6 +182,7 @@
     height: CLARENCE_H,
     vy: 0,
     ducking: false,
+    jumpsRemaining: 2,
   };
 
   let gameState = 'idle';
@@ -782,13 +785,20 @@
       }
       if (PLAYER.y >= GROUND_Y && !PLAYER.ducking) {
         PLAYER.vy = CONFIG.JUMP_FORCE;
+        PLAYER.jumpsRemaining = 1;
         lastJumpTime = performance.now();
-      } else if (PLAYER.y < GROUND_Y && barrelRollTimer === 0) {
+      } else if (PLAYER.y < GROUND_Y) {
         const now = performance.now();
-        if (now - lastJumpTime < 400) {
+        const sinceLast = now - lastJumpTime;
+        if (sinceLast < CONFIG.BARREL_ROLL_TAP_WINDOW && barrelRollTimer === 0) {
           barrelRollTimer = CONFIG.TRICK_DURATION;
           score += CONFIG.BARREL_ROLL_BONUS;
           spawnTrickParticles(PLAYER.x + CLARENCE_W / 2, PLAYER.y - CLARENCE_H / 2);
+        } else if (PLAYER.jumpsRemaining > 0) {
+          PLAYER.vy = CONFIG.DOUBLE_JUMP_FORCE;
+          PLAYER.jumpsRemaining--;
+          lastJumpTime = now;
+          spawnDustParticles(PLAYER.x + CLARENCE_W / 2, PLAYER.y);
         }
       }
     }
@@ -916,6 +926,7 @@
     PLAYER.y = GROUND_Y;
     PLAYER.vy = 0;
     PLAYER.ducking = false;
+    PLAYER.jumpsRemaining = 2;
     obstacles = [];
     score = 0;
     speed = CONFIG.INITIAL_SPEED;
@@ -950,6 +961,7 @@
         spawnDustParticles(PLAYER.x + CLARENCE_W / 2, GROUND_Y);
       }
       PLAYER.vy = 0;
+      PLAYER.jumpsRemaining = 2;
       if ((keys['ArrowDown'] || touchDucking) && !PLAYER.ducking) {
         spawnEgg();
         PLAYER.ducking = true;
