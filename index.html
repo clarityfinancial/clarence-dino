@@ -827,16 +827,33 @@
 
   // ─── Score Display ────────────────────────────────────────────────
 
+  function luminance(r, g, b) {
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  function contrastColor(bgR, bgG, bgB) {
+    return luminance(bgR, bgG, bgB) > 140 ? '#222' : '#f0f0f0';
+  }
+
+  function contrastColorAlpha(bgR, bgG, bgB, alpha) {
+    return luminance(bgR, bgG, bgB) > 140
+      ? `rgba(34,34,34,${alpha})`
+      : `rgba(240,240,240,${alpha})`;
+  }
+
   function scoreTextColor() {
     const sky = skyColorAt(nightAlpha, true);
-    return `rgb(${255 - sky[0]},${255 - sky[1]},${255 - sky[2]})`;
+    return contrastColor(sky[0], sky[1], sky[2]);
   }
 
   function drawScore() {
     ctx.font = '16px "Courier New", monospace';
     ctx.textAlign = 'right';
-    const txtColor = scoreTextColor();
-    ctx.shadowColor = nightAlpha > 0.5 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+    const sky = skyColorAt(nightAlpha, true);
+    const txtColor = contrastColor(sky[0], sky[1], sky[2]);
+    const txtShadow = luminance(sky[0], sky[1], sky[2]) > 140
+      ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
+    ctx.shadowColor = txtShadow;
     ctx.shadowBlur = 3;
 
     const scoreStr = String(Math.floor(score)).padStart(5, '0');
@@ -858,8 +875,11 @@
   // ─── Game Over ────────────────────────────────────────────────────
 
   function drawGameOver() {
-    const txtColor = scoreTextColor();
-    ctx.shadowColor = nightAlpha > 0.5 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+    const sky = skyColorAt(nightAlpha, true);
+    const txtColor = contrastColor(sky[0], sky[1], sky[2]);
+    const txtShadow = luminance(sky[0], sky[1], sky[2]) > 140
+      ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
+    ctx.shadowColor = txtShadow;
     ctx.shadowBlur = 4;
     ctx.fillStyle = txtColor;
     ctx.font = '20px "Courier New", monospace';
@@ -1186,9 +1206,8 @@
       lastRenderedAlpha = roundedAlpha;
       const pageBg = `rgb(${pageColor[0]},${pageColor[1]},${pageColor[2]})`;
       document.body.style.backgroundColor = pageBg;
-      const invR = 255 - pageColor[0], invG = 255 - pageColor[1], invB = 255 - pageColor[2];
-      const textRgb = `rgb(${invR},${invG},${invB})`;
-      const subRgb = `rgba(${invR},${invG},${invB},0.6)`;
+      const textRgb = contrastColor(pageColor[0], pageColor[1], pageColor[2]);
+      const subRgb = contrastColorAlpha(pageColor[0], pageColor[1], pageColor[2], 0.6);
       if (headerH1) headerH1.style.color = textRgb;
       if (headerP) headerP.style.color = subRgb;
       if (hintEl) hintEl.style.color = subRgb;
