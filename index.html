@@ -9,7 +9,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
-    background: #f7f7f7;
+    background: #f0f0f0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -149,11 +149,13 @@
     TRICK_DURATION: 20,
     BARREL_ROLL_BONUS: 10,
     TRICK_BONUS: 5,
-    MILESTONE_INTERVAL: 100,
-    MILESTONE_FLASH_DURATION: 16,
     MAX_PARTICLES: 40,
     DOUBLE_JUMP_FORCE: -9,
     BARREL_ROLL_TAP_WINDOW: 200,
+    PEOPLE_MIN: 3,
+    PEOPLE_MAX: 8,
+    PEOPLE_MAX_ALIVE: 32,
+    PEOPLE_GRAVITY: 0.45,
   });
 
   const { GROUND_Y, CLARENCE_W, CLARENCE_H } = CONFIG;
@@ -185,10 +187,6 @@
   let headSpinTimer = 0;
   let wingSpreadTimer = 0;
   let lastJumpTime = 0;
-
-  // Milestone flash
-  let milestoneFlashTimer = 0;
-  let lastMilestone = 0;
 
   // Day/night transition
   let nightAlpha = 0;
@@ -231,19 +229,144 @@
       ctx.ellipse(egg.x, egg.y - 1, 5, 2, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = nightAlpha > 0.5 ? '#e0d4b8' : '#f5e6d0';
+      ctx.fillStyle = nightAlpha > 0.5 ? '#bbb' : '#eee';
       ctx.beginPath();
       ctx.ellipse(egg.x, ey, 6, 8, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = nightAlpha > 0.5 ? '#b8a888' : '#d4b896';
+      ctx.strokeStyle = nightAlpha > 0.5 ? '#999' : '#ccc';
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = nightAlpha > 0.5 ? '#c8b898' : '#e8d4b8';
+      ctx.fillStyle = nightAlpha > 0.5 ? '#ddd' : '#fff';
       ctx.beginPath();
       ctx.ellipse(egg.x - 1, ey - 2, 2, 3, -0.3, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  // People fleeing from collided buildings
+  const people = [];
+
+  function doorOffsetsForType(type) {
+    switch (type) {
+      case 'tinySchool': return [11];
+      case 'smallSchool': return [15];
+      case 'largeSchool': return [23];
+      case 'schoolPair': return [11, 39];
+      default: return [];
+    }
+  }
+
+  function findNextDoorX(fromX) {
+    let best = Infinity;
+    for (const obs of obstacles) {
+      if (obs.flying) continue;
+      const doors = doorOffsetsForType(obs.type);
+      for (const d of doors) {
+        const doorX = obs.x + d;
+        if (doorX > fromX && doorX < best) best = doorX;
+      }
+    }
+    return best === Infinity ? null : best;
+  }
+
+  function spawnPeople(obs) {
+    const doors = doorOffsetsForType(obs.type);
+    if (doors.length === 0) return;
+    const count = CONFIG.PEOPLE_MIN + Math.floor(Math.random() * (CONFIG.PEOPLE_MAX - CONFIG.PEOPLE_MIN + 1));
+    const nextDoor = findNextDoorX(obs.x + obs.width);
+    const teacherIdx = Math.floor(Math.random() * count);
+    for (let i = 0; i < count; i++) {
+      if (people.length >= CONFIG.PEOPLE_MAX_ALIVE) return;
+      const door = doors[Math.floor(Math.random() * doors.length)];
+      const dir = Math.random() < 0.55 ? 1 : -1; // slight bias to running right (away from Clarence)
+      const isTeacher = i === teacherIdx;
+      people.push({
+        x: obs.x + door,
+        y: GROUND_Y,
+        vx: dir * (isTeacher ? 1.6 + Math.random() * 1.4 : 2 + Math.random() * 2),
+        vy: -(isTeacher ? 1.8 + Math.random() * 1.8 : 2 + Math.random() * 2.5),
+        frame: Math.random() * 10,
+        shade: Math.floor(60 + Math.random() * 60),
+        targetX: dir > 0 ? nextDoor : null,
+        scale: isTeacher ? 1.5 : 1,
+        isTeacher,
+      });
+    }
+  }
+
+  function updatePeople(dt) {
+    let writeIdx = 0;
+    for (let i = 0; i < people.length; i++) {
+      const p = people[i];
+      p.x += p.vx * dt;
+      p.vy += CONFIG.PEOPLE_GRAVITY * dt;
+      p.y += p.vy * dt;
+      if (p.y >= GROUND_Y) {
+        p.y = GROUND_Y;
+        p.vy = 0;
+      }
+      p.frame += dt;
+
+      // Enter the next building if one is ahead and we've reached its door
+      if (p.targetX != null && p.x >= p.targetX && p.y >= GROUND_Y - 0.5) {
+        continue;
+      }
+
+      if (p.x > -20 && p.x < W + 20) {
+        people[writeIdx++] = p;
+      }
+    }
+    people.length = writeIdx;
+  }
+
+  function drawPeople() {
+    for (const p of people) {
+      const bodyColor = nightAlpha > 0.5
+        ? `rgb(${220 - p.shade / 3},${220 - p.shade / 3},${220 - p.shade / 3})`
+        : `rgb(${p.shade},${p.shade},${p.shade})`;
+      const s = p.scale || 1;
+      const legSwing = Math.sin(p.frame * 0.8) * 3 * s;
+      const armSwing = Math.sin(p.frame * 0.8 + Math.PI) * 2.5 * s;
+      const facing = p.vx >= 0 ? 1 : -1;
+      const headR = 2.2 * s;
+      const headY = p.y - 14 * s;
+      const shoulderY = p.y - 12 * s;
+      const hipY = p.y - 6 * s;
+
+      ctx.fillStyle = bodyColor;
+      ctx.strokeStyle = bodyColor;
+      ctx.lineWidth = 1.2 * s;
+      ctx.lineCap = 'round';
+
+      // head
+      ctx.beginPath();
+      ctx.arc(p.x, headY, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // torso
+      ctx.beginPath();
+      ctx.moveTo(p.x, shoulderY);
+      ctx.lineTo(p.x, hipY);
+      ctx.stroke();
+
+      // legs (running)
+      ctx.beginPath();
+      ctx.moveTo(p.x, hipY);
+      ctx.lineTo(p.x + legSwing * facing, p.y);
+      ctx.moveTo(p.x, hipY);
+      ctx.lineTo(p.x - legSwing * facing, p.y);
+      ctx.stroke();
+
+      // arms (flailing)
+      ctx.beginPath();
+      ctx.moveTo(p.x, shoulderY + 1 * s);
+      ctx.lineTo(p.x + armSwing * facing + facing * s, headY);
+      ctx.moveTo(p.x, shoulderY + 1 * s);
+      ctx.lineTo(p.x - armSwing * facing - facing * s, hipY - 2 * s);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
   }
 
   // Particle system
@@ -309,10 +432,8 @@
         ctx.fillStyle = `rgb(${c},${c},${c})`;
         ctx.fillRect(p.x, p.y, p.size, p.size);
       } else {
-        const r = lerpChannel(0xd4, 0xff, nightAlpha);
-        const g = lerpChannel(0xaf, 0xcc, nightAlpha);
-        const b = lerpChannel(0x37, 0x44, nightAlpha);
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        const v = lerpChannel(0xcc, 0xff, nightAlpha);
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
         ctx.beginPath();
         drawStar(p.x, p.y, 5, p.size, p.size * 0.5);
         ctx.fill();
@@ -415,10 +536,10 @@
   // ─── Obstacles: Schools ──────────────────────────────────────────
 
   function windowColor() {
-    if (!nightMode) return '#d4eaf7';
-    ctx.shadowColor = '#ffcc44';
+    if (!nightMode) return '#e8e8e8';
+    ctx.shadowColor = '#fff';
     ctx.shadowBlur = 6;
-    return '#ffe082';
+    return '#f0f0f0';
   }
 
   function clearWindowGlow() {
@@ -426,10 +547,10 @@
     ctx.shadowBlur = 0;
   }
 
-  const redWall = () => nightMode ? '#7a2a1e' : '#c0392b';
-  const redRoof = () => nightMode ? '#4a1a12' : '#8b1a1a';
-  const whiteTrim = () => nightMode ? '#bbb' : '#f5f5f5';
-  const doorColor = () => nightMode ? '#e8e0d0' : '#fff';
+  const redWall = () => nightMode ? '#555' : '#888';
+  const redRoof = () => nightMode ? '#333' : '#666';
+  const whiteTrim = () => nightMode ? '#999' : '#e0e0e0';
+  const doorColor = () => nightMode ? '#bbb' : '#f5f5f5';
 
   function drawSmallSchool(x, y) {
     // main building
@@ -449,7 +570,7 @@
     // door
     ctx.fillStyle = doorColor();
     ctx.fillRect(x + 11, y + 24, 8, 12);
-    ctx.fillStyle = '#d4af37';
+    ctx.fillStyle = '#ccc';
     ctx.fillRect(x + 17, y + 29, 2, 2);
     // windows
     ctx.fillStyle = windowColor();
@@ -487,12 +608,12 @@
     ctx.closePath();
     ctx.fill();
     // bell
-    ctx.fillStyle = '#d4af37';
+    ctx.fillStyle = '#ccc';
     ctx.fillRect(x + 22, y - 1, 3, 3);
     // door
     ctx.fillStyle = doorColor();
     ctx.fillRect(x + 19, y + 24, 8, 12);
-    ctx.fillStyle = '#d4af37';
+    ctx.fillStyle = '#ccc';
     ctx.fillRect(x + 25, y + 29, 2, 2);
     // windows
     ctx.fillStyle = windowColor();
@@ -512,7 +633,7 @@
     ctx.lineTo(x + 23, y - 22);
     ctx.stroke();
     // flag
-    ctx.fillStyle = '#2980b9';
+    ctx.fillStyle = '#aaa';
     ctx.fillRect(x + 23, y - 22, 8, 5);
   }
 
@@ -534,7 +655,7 @@
     // door
     ctx.fillStyle = doorColor();
     ctx.fillRect(x + 8, y + 18, 6, 10);
-    ctx.fillStyle = '#d4af37';
+    ctx.fillStyle = '#ccc';
     ctx.fillRect(x + 13, y + 22, 1, 2);
     // windows
     ctx.fillStyle = windowColor();
@@ -557,7 +678,7 @@
     ctx.translate(x + 16, y + 10 + bob);
     ctx.rotate(tilt);
     // board (diamond shape from above)
-    ctx.fillStyle = nightMode ? '#222' : '#2c3e50';
+    ctx.fillStyle = nightMode ? '#222' : '#444';
     ctx.beginPath();
     ctx.moveTo(0, -8);
     ctx.lineTo(18, 0);
@@ -565,21 +686,21 @@
     ctx.lineTo(-18, 0);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = nightMode ? '#555' : '#34495e';
+    ctx.strokeStyle = nightMode ? '#555' : '#555';
     ctx.lineWidth = 1;
     ctx.stroke();
     // cap base
-    ctx.fillStyle = nightMode ? '#333' : '#34495e';
+    ctx.fillStyle = nightMode ? '#333' : '#555';
     ctx.fillRect(-8, 0, 16, 6);
     // tassel
-    ctx.strokeStyle = '#d4af37';
+    ctx.strokeStyle = '#bbb';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, -1);
     ctx.lineTo(14, 2);
     ctx.lineTo(14, 12);
     ctx.stroke();
-    ctx.fillStyle = '#d4af37';
+    ctx.fillStyle = '#ccc';
     ctx.beginPath();
     ctx.arc(14, 13, 2, 0, Math.PI * 2);
     ctx.fill();
@@ -664,10 +785,10 @@
   }
 
   const SKY = {
-    dayTop: [135, 206, 235], dayBot: [220, 235, 247],
-    sunsetTop: [255, 140, 66], sunsetBot: [255, 215, 0],
-    twilightTop: [45, 27, 105], twilightBot: [255, 99, 71],
-    nightTop: [10, 10, 30], nightBot: [26, 26, 46],
+    dayTop: [210, 210, 210], dayBot: [240, 240, 240],
+    sunsetTop: [170, 170, 170], sunsetBot: [200, 200, 200],
+    twilightTop: [80, 80, 80], twilightBot: [120, 120, 120],
+    nightTop: [15, 15, 15], nightBot: [30, 30, 30],
   };
 
   function skyColorAt(t, isTop) {
@@ -702,7 +823,7 @@
     drawStars();
     ctx.restore();
 
-    const groundColor = lerpRGB([247, 247, 247], [26, 26, 46], nightAlpha);
+    const groundColor = lerpRGB([240, 240, 240], [25, 25, 25], nightAlpha);
     ctx.fillStyle = `rgb(${groundColor[0]},${groundColor[1]},${groundColor[2]})`;
     ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
   }
@@ -719,20 +840,16 @@
     ctx.save();
     ctx.globalAlpha = sunAlpha;
 
-    const glowR = lerpChannel(0xff, 0xff, nightAlpha);
-    const glowG = lerpChannel(0xd7, 0x63, nightAlpha);
-    const glowB = lerpChannel(0x00, 0x47, nightAlpha);
+    const sunBright = lerpChannel(0xff, 0x99, nightAlpha);
 
     const glow = ctx.createRadialGradient(sunX, sunY, sunRadius * 0.5, sunX, sunY, sunRadius * 3);
-    glow.addColorStop(0, `rgba(${glowR},${glowG},${glowB},0.3)`);
-    glow.addColorStop(1, 'rgba(255,200,0,0)');
+    glow.addColorStop(0, `rgba(${sunBright},${sunBright},${sunBright},0.3)`);
+    glow.addColorStop(1, `rgba(${sunBright},${sunBright},${sunBright},0)`);
     ctx.fillStyle = glow;
     ctx.fillRect(sunX - sunRadius * 3, sunY - sunRadius * 3, sunRadius * 6, sunRadius * 6);
 
-    const bodyR = lerpChannel(0xff, 0xff, nightAlpha * 1.5);
-    const bodyG = lerpChannel(0xe0, 0x8c, nightAlpha * 1.5);
-    const bodyB = lerpChannel(0x42, 0x00, nightAlpha * 1.5);
-    ctx.fillStyle = `rgb(${bodyR},${bodyG},${bodyB})`;
+    const bodyV = lerpChannel(0xff, 0xaa, Math.min(nightAlpha * 1.5, 1));
+    ctx.fillStyle = `rgb(${bodyV},${bodyV},${bodyV})`;
     ctx.beginPath();
     ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
     ctx.fill();
@@ -751,17 +868,17 @@
     ctx.globalAlpha = moonAlpha;
 
     const moonGlow = ctx.createRadialGradient(moonX, moonY, moonRadius * 0.5, moonX, moonY, moonRadius * 2.5);
-    moonGlow.addColorStop(0, 'rgba(200,210,255,0.15)');
-    moonGlow.addColorStop(1, 'rgba(200,210,255,0)');
+    moonGlow.addColorStop(0, 'rgba(220,220,220,0.15)');
+    moonGlow.addColorStop(1, 'rgba(220,220,220,0)');
     ctx.fillStyle = moonGlow;
     ctx.fillRect(moonX - moonRadius * 3, moonY - moonRadius * 3, moonRadius * 6, moonRadius * 6);
 
-    ctx.fillStyle = '#e8e8f0';
+    ctx.fillStyle = '#ddd';
     ctx.beginPath();
     ctx.arc(moonX, moonY, moonRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(255,255,240,0.3)';
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.beginPath();
     ctx.arc(moonX - 2, moonY - 2, moonRadius * 0.5, 0, Math.PI * 2);
     ctx.fill();
@@ -786,7 +903,7 @@
   // ─── Clouds ───────────────────────────────────────────────────────
 
   function drawCloud(x, y) {
-    ctx.fillStyle = nightMode ? '#444' : '#e8e8e8';
+    ctx.fillStyle = nightMode ? '#3a3a3a' : '#d0d0d0';
     const s = 2;
     ctx.fillRect(x + 6*s, y, 14*s, 4*s);
     ctx.fillRect(x + 2*s, y + 2*s, 22*s, 4*s);
@@ -806,7 +923,7 @@
   // ─── Ground ───────────────────────────────────────────────────────
 
   function drawGround() {
-    ctx.fillStyle = nightMode ? '#888' : '#535353';
+    ctx.fillStyle = nightMode ? '#777' : '#444';
     ctx.fillRect(0, GROUND_Y, W, 2);
 
     // ground texture bumps
@@ -918,10 +1035,10 @@
       const oh = obs.height - 4;
 
       if (px < ox + ow && px + prw > ox && py < oy + oh && py + prh > oy) {
-        return true;
+        return obs;
       }
     }
-    return false;
+    return null;
   }
 
   // ─── Input ────────────────────────────────────────────────────────
@@ -1096,17 +1213,22 @@
     headSpinTimer = 0;
     wingSpreadTimer = 0;
     lastJumpTime = 0;
-    milestoneFlashTimer = 0;
-    lastMilestone = 0;
     nightAlpha = 0;
     particles.length = 0;
     eggs.length = 0;
     lastEggTime = 0;
+    people.length = 0;
     needsRedraw = true;
   }
 
   function update(dt) {
-    if (gameState !== 'running') return;
+    if (gameState !== 'running') {
+      if (people.length > 0) {
+        updatePeople(dt);
+        needsRedraw = true;
+      }
+      return;
+    }
 
     frameCount++;
     needsRedraw = true;
@@ -1138,13 +1260,6 @@
     const goingDark = cycleIndex % 2 === 0;
     nightAlpha = goingDark ? cycleProgress : 1 - cycleProgress;
     nightMode = nightAlpha > 0.5;
-
-    const currentMilestone = Math.floor(score / CONFIG.MILESTONE_INTERVAL);
-    if (currentMilestone > lastMilestone) {
-      lastMilestone = currentMilestone;
-      milestoneFlashTimer = CONFIG.MILESTONE_FLASH_DURATION;
-    }
-    else if (milestoneFlashTimer > 0) milestoneFlashTimer = Math.max(0, milestoneFlashTimer - dt);
 
     updateParticles(dt);
     updateEggs(dt);
@@ -1181,14 +1296,18 @@
     }
     obstacles.length = writeIdx;
 
-    if (checkCollision()) {
+    const hit = checkCollision();
+    if (hit) {
       gameState = 'dead';
       document.body.classList.remove('playing');
+      spawnPeople(hit);
       if (Math.floor(score) > highScore) {
         highScore = Math.floor(score);
         safeSetItem('clarity-runner-hi', String(highScore));
       }
     }
+
+    updatePeople(dt);
   }
 
   // ─── Render ───────────────────────────────────────────────────────
@@ -1200,7 +1319,7 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    const pageColor = lerpRGB([247, 247, 247], [26, 26, 46], nightAlpha);
+    const pageColor = lerpRGB([240, 240, 240], [25, 25, 25], nightAlpha);
     const roundedAlpha = Math.round(nightAlpha * 100) / 100;
     if (roundedAlpha !== lastRenderedAlpha) {
       lastRenderedAlpha = roundedAlpha;
@@ -1230,18 +1349,14 @@
       drawObstacle(obs);
     }
 
+    // fleeing people (drawn in front of buildings, behind player)
+    drawPeople();
+
     // player
     drawPlayer();
 
     // particles
     drawParticles();
-
-    // milestone flash
-    if (milestoneFlashTimer > 0) {
-      const flashAlpha = milestoneFlashTimer / CONFIG.MILESTONE_FLASH_DURATION;
-      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.3})`;
-      ctx.fillRect(0, 0, W, H);
-    }
 
     // score
     drawScore();
